@@ -391,7 +391,8 @@ enum {
             }
             [self stopBackgroundTask];
         }
-        return;
+        //TODO: Why is it returning here? That means flushQueue won't run except once, after the background task is killed.
+        //return;
     }
 
     if ([locationQueue count] < 1) {
@@ -411,6 +412,8 @@ enum {
     }
     if (location == nil) return;
 
+    DDLogDebug(@"LocationManager flushQueue location: %@", location);
+    
     [self sync:location];
 
     if (![location.type isEqual: @"current"]) {
@@ -503,7 +506,7 @@ enum {
 
 - (void) locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
 {
-    DDLogDebug(@"LocationManager didUpdateLocations (operationMode: %lu)", (unsigned long)operationMode);
+    // DDLogDebug(@"LocationManager didUpdateLocations (operationMode: %lu)", (unsigned long)operationMode);
 
     locationError = nil;
     BGOperationMode actAsInMode = operationMode;
@@ -529,7 +532,7 @@ enum {
         Location *bgloc = [Location fromCLLocation:location];
         bgloc.type = @"current";
 
-        DDLogDebug(@"Location age %f", [bgloc locationAge]);
+        // DDLogDebug(@"Location age %f", [bgloc locationAge]);
 
         // test the age of the location measurement to determine if the measurement is cached
         // in most cases you will not want to rely on cached measurements
