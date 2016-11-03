@@ -54,27 +54,27 @@ enum {
     BOOL isAcquiringStationaryLocation;
     BOOL isAcquiringSpeed;
     BOOL hasConnectivity;
-
+    
     BGOperationMode operationMode;
     NSDate *aquireStartTime;
     //    BOOL shouldStart; //indicating intent to start service, but we're waiting for user permission
-
+    
     CLLocationManager *locationManager;
     CLCircularRegion *stationaryRegion;
     NSDate *stationarySince;
-
+    
     NSMutableArray *locationQueue;
     NSError* locationError;
-
+    
     UILocalNotification *localNotification;
-
+    
     NSNumber *maxBackgroundHours;
     UIBackgroundTaskIdentifier bgTask;
     NSDate *lastBgTaskAt;
-
+    
     // configurable options
     Config *_config;
-
+    
     LocationUploader *uploader;
     Reachability *reach;
 }
@@ -83,14 +83,14 @@ enum {
 - (id) init
 {
     self = [super init];
-
+    
     if (self == nil) {
         return self;
     }
-
+    
     // background location cache, for when no network is detected.
     locationManager = [[CLLocationManager alloc] init];
-
+    
     reach = [Reachability reachabilityWithHostname:@"www.google.com"];
     reach.reachableBlock = ^(Reachability *reach){
         // keep in mind this is called on a background thread
@@ -99,27 +99,27 @@ enum {
         DDLogInfo(@"Network is now reachable");
         hasConnectivity = YES;
     };
-
+    
     reach.unreachableBlock = ^(Reachability *reach) {
         DDLogInfo(@"Network is now unreachable");
         hasConnectivity = NO;
     };
-
-
+    
+    
     if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"9.0")) {
         DDLogDebug(@"LocationManager iOS9 detected");
         locationManager.allowsBackgroundLocationUpdates = YES;
     }
-
+    
     locationManager.delegate = self;
-
+    
     localNotification = [[UILocalNotification alloc] init];
     localNotification.timeZone = [NSTimeZone defaultTimeZone];
-
+    
     locationQueue = [[NSMutableArray alloc] init];
-
+    
     bgTask = UIBackgroundTaskInvalid;
-
+    
     isStarted = NO;
     isUpdatingLocation = NO;
     isAcquiringStationaryLocation = NO;
@@ -127,7 +127,7 @@ enum {
     hasConnectivity = YES;
     //    shouldStart = NO;
     stationaryRegion = nil;
-
+    
     return self;
 }
 
@@ -147,14 +147,14 @@ enum {
 {
     DDLogVerbose(@"LocationManager configure");
     _config = config;
-
+    
     DDLogDebug(@"%@", config);
-
+    
     locationManager.pausesLocationUpdatesAutomatically = _config.pauseLocationUpdates;
     locationManager.activityType = [_config decodeActivityType];
     locationManager.distanceFilter = _config.distanceFilter; // meters
     locationManager.desiredAccuracy = [_config decodeDesiredAccuracy];
-
+    
     // ios 8 requires permissions to send local-notifications
     if (_config.isDebugging) {
         UIApplication *app = [UIApplication sharedApplication];
@@ -162,11 +162,11 @@ enum {
             [app registerUserNotificationSettings:[UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeAlert|UIUserNotificationTypeBadge|UIUserNotificationTypeSound categories:nil]];
         }
     }
-
+    
     if ([config hasSyncUrl] && uploader == nil) {
         uploader = [[LocationUploader alloc] init];
     }
-
+    
     return YES;
 }
 
@@ -178,39 +178,39 @@ enum {
 - (BOOL) start:(NSError * __autoreleasing *)outError
 {
     DDLogInfo(@"LocationManager will start: %d", isStarted);
-
+    
     if (isStarted) {
         return NO;
     }
-
+    
     NSUInteger authStatus;
-
+    
     if ([CLLocationManager respondsToSelector:@selector(authorizationStatus)]) { // iOS 4.2+
         authStatus = [CLLocationManager authorizationStatus];
-
+        
         if (authStatus == kCLAuthorizationStatusDenied) {
             NSDictionary *errorDictionary = @{ @"code": [NSNumber numberWithInt:DENIED], @"message" : @LOCATION_DENIED };
             if (outError != NULL) {
                 *outError = [NSError errorWithDomain:Domain code:DENIED userInfo:errorDictionary];
             }
-
+            
             return NO;
         }
-
+        
         if (authStatus == kCLAuthorizationStatusRestricted) {
             NSDictionary *errorDictionary = @{ @"code": [NSNumber numberWithInt:DENIED], @"message" : @LOCATION_RESTRICTED };
             if (outError != NULL) {
                 *outError = [NSError errorWithDomain:Domain code:DENIED userInfo:errorDictionary];
             }
-
+            
             return NO;
         }
-
+        
 #ifdef __IPHONE_8_0
         // we do startUpdatingLocation even though we might not get permissions granted
         // we can stop later on when recieved callback on user denial
         // it's neccessary to start call startUpdatingLocation in iOS < 8.0 to show user prompt!
-
+        
         if (authStatus == kCLAuthorizationStatusNotDetermined) {
             if ([locationManager respondsToSelector:@selector(requestAlwaysAuthorization)]) {  //iOS 8.0+
                 DDLogVerbose(@"LocationManager requestAlwaysAuthorization");
@@ -219,10 +219,10 @@ enum {
         }
 #endif
     }
-
+    
     isStarted = YES;
     [self switchMode:FOREGROUND];
-
+    
     return YES;
 }
 
@@ -232,19 +232,19 @@ enum {
 - (BOOL) stop:(NSError * __autoreleasing *)outError
 {
     DDLogInfo(@"LocationManager stop");
-
+    
     if (!isStarted) {
         return YES;
     }
-
+    
     isStarted = NO;
-
+    
     [self stopUpdatingLocation];
     [self stopMonitoringSignificantLocationChanges];
     [self stopMonitoringForRegion];
-
+    
     [reach stopNotifier];
-
+    
     return YES;
 }
 
@@ -264,15 +264,15 @@ enum {
 - (void) switchMode:(BGOperationMode)mode
 {
     DDLogInfo(@"LocationManager switchMode %lu", (unsigned long)mode);
-
+    
     operationMode = mode;
-
+    
     if (!isStarted) return;
-
+    
     if (_config.isDebugging) {
         AudioServicesPlaySystemSound (operationMode  == FOREGROUND ? paceChangeYesSound : paceChangeNoSound);
     }
-
+    
     if (operationMode == FOREGROUND || !_config.saveBatteryOnBackground) {
         isAcquiringSpeed = YES;
         isAcquiringStationaryLocation = NO;
@@ -283,9 +283,9 @@ enum {
         isAcquiringStationaryLocation = YES;
         [self startMonitoringSignificantLocationChanges];
     }
-
+    
     aquireStartTime = [NSDate date];
-
+    
     // Crank up the GPS power temporarily to get a good fix on our current location
     [self stopUpdatingLocation];
     locationManager.distanceFilter = kCLDistanceFilterNone;
@@ -298,7 +298,7 @@ enum {
     if ([CLLocationManager respondsToSelector:@selector(locationServicesEnabled)]) { // iOS 4.x
         return [CLLocationManager locationServicesEnabled];
     }
-
+    
     return NO;
 }
 
@@ -321,7 +321,7 @@ enum {
         CLLocationDistance radius = [stationaryRegion radius];
         CLLocationCoordinate2D coordinate = [stationaryRegion center];
         double timestamp = [stationarySince timeIntervalSince1970] * 1000;
-
+        
         NSMutableDictionary *data = [[NSMutableDictionary alloc] init];
         [data setObject:[NSNumber numberWithDouble:coordinate.latitude] forKey:@"latitude"];
         [data setObject:[NSNumber numberWithDouble:coordinate.longitude] forKey:@"longitude"];
@@ -369,14 +369,14 @@ enum {
 - (void) queue:(Location*)location
 {
     DDLogDebug(@"LocationManager queue %@", location);
-
+    
     SQLiteLocationDAO* locationDAO = [SQLiteLocationDAO sharedInstance];
     location.id = [locationDAO persistLocation:location limitRows:_config.maxLocations];
-
+    
     @synchronized(self) {
         [locationQueue addObject:location];
     }
-
+    
     [self flushQueue];
 }
 
@@ -394,14 +394,14 @@ enum {
         //TODO: Why is it returning here? That means flushQueue won't run except once, after the background task is killed.
         //return;
     }
-
+    
     if ([locationQueue count] < 1) {
         return;
     }
-
+    
     // Create a background-task and delegate to Javascript for syncing location
     bgTask = [self createBackgroundTask];
-
+    
     Location *location = nil;
     @synchronized(self) {
         if ([locationQueue count] > 0) {
@@ -411,15 +411,15 @@ enum {
         }
     }
     if (location == nil) return;
-
+    
     DDLogDebug(@"LocationManager flushQueue location: %@", location);
     
     [self sync:location];
-
+    
     if (![location.type isEqual: @"current"]) {
         return;
     }
-
+    
     if ([_config hasSyncUrl] || [_config hasUrl]) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
             if (hasConnectivity && [_config hasUrl]) {
@@ -435,12 +435,14 @@ enum {
                     [reach startNotifier];
                 }
             }
-
+            
             NSString *syncUrl = [_config hasSyncUrl] ? _config.syncUrl : _config.url;
             [uploader sync:syncUrl onLocationThreshold:_config.syncThreshold];
         });
     }
-
+    
+    // now that we're creating a new BG task for every request we need to stop each one
+    [self stopBackgroundTask];
 }
 
 - (UIBackgroundTaskIdentifier) createBackgroundTask
@@ -470,16 +472,17 @@ enum {
 {
     DDLogInfo(@"LocationManager#sync %@", location);
     if (_config.isDebugging) {
-        [self notify:[NSString stringWithFormat:@"Location update: %s\nSPD: %0.0f | DF: %ld | ACY: %0.0f",
-            ((operationMode == FOREGROUND) ? "FG" : "BG"),
-            [location.speed doubleValue],
-            (long) locationManager.distanceFilter,
-            [location.accuracy doubleValue]
-        ]];
-
+        [self notify:[NSString stringWithFormat:@"Location update: %s\n%@\nSPD: %0.0f | DF: %ld | ACY: %0.0f",
+                      ((operationMode == FOREGROUND) ? "FG" : "BG"),
+                      location.type,
+                      [location.speed doubleValue],
+                      (long) locationManager.distanceFilter,
+                      [location.accuracy doubleValue]
+                      ]];
+        
         AudioServicesPlaySystemSound (locationSyncSound);
     }
-
+    
     // Build a resultset for javascript callback.
     if ([location.type isEqualToString:@"stationary"]) {
         [self fireStationaryRegionListeners:[location toDictionary]];
@@ -501,77 +504,77 @@ enum {
         [data setObject:[NSNumber numberWithDouble:_config.stationaryRadius] forKey:@"radius"];
         [self.delegate onStationaryChanged:data];
     }
-//    [self stopBackgroundTask];
+    //    [self stopBackgroundTask];
 }
 
 - (void) locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
 {
     // DDLogDebug(@"LocationManager didUpdateLocations (operationMode: %lu)", (unsigned long)operationMode);
-
+    
     locationError = nil;
     BGOperationMode actAsInMode = operationMode;
-
+    
     if (actAsInMode == BACKGROUND) {
         if (_config.saveBatteryOnBackground == NO) actAsInMode = FOREGROUND;
     }
-
+    
     if (actAsInMode == FOREGROUND) {
         if (!isUpdatingLocation) [self startUpdatingLocation];
     }
-
+    
     if (actAsInMode == BACKGROUND) {
         if (!isAcquiringStationaryLocation && !stationaryRegion) {
             // Perhaps our GPS signal was interupted, re-acquire a stationaryLocation now.
             [self switchMode:operationMode];
         }
     }
-
-
+    
+    
     Location *bestLocation = nil;
     for (CLLocation *location in locations) {
         Location *bgloc = [Location fromCLLocation:location];
         bgloc.type = @"current";
-
+        
         // DDLogDebug(@"Location age %f", [bgloc locationAge]);
-
+        
         // test the age of the location measurement to determine if the measurement is cached
         // in most cases you will not want to rely on cached measurements
         if ([bgloc locationAge] > maxLocationAgeInSeconds || ![bgloc hasAccuracy] || ![bgloc hasTime]) {
             continue;
         }
-
+        
         if (bestLocation == nil) {
             bestLocation = bgloc;
             continue;
         }
-
+        
         if ([bgloc isBetterLocation:bestLocation]) {
             DDLogInfo(@"Better location found: %@", bgloc);
             bestLocation = bgloc;
         }
     }
-
+    
     if (bestLocation == nil) {
         return;
     }
-
+    
     // test the measurement to see if it is more accurate than the previous measurement
     if (isAcquiringStationaryLocation) {
         DDLogDebug(@"Acquiring stationary location, accuracy: %@", bestLocation.accuracy);
         if (_config.isDebugging) {
             AudioServicesPlaySystemSound (acquiringLocationSound);
         }
-
+        
         if ([bestLocation.accuracy doubleValue] <= [[NSNumber numberWithInteger:_config.desiredAccuracy] doubleValue]) {
             DDLogDebug(@"LocationManager found most accurate stationary before timeout");
         } else if (-[aquireStartTime timeIntervalSinceNow] < maxLocationWaitTimeInSeconds) {
             // we still have time to aquire better location
             return;
         }
-
+        
         isAcquiringStationaryLocation = NO;
         [self stopUpdatingLocation]; //saving power while monitoring region
-
+        
         Location *stationaryLocation = [bestLocation copy];
         stationaryLocation.type = @"stationary";
         [self startMonitoringStationaryRegion:stationaryLocation];
@@ -581,24 +584,24 @@ enum {
         if (_config.isDebugging) {
             AudioServicesPlaySystemSound (acquiringLocationSound);
         }
-
+        
         if ([bestLocation.accuracy doubleValue] <= [[NSNumber numberWithInteger:_config.desiredAccuracy] doubleValue]) {
             DDLogDebug(@"LocationManager found most accurate location before timeout");
         } else if (-[aquireStartTime timeIntervalSinceNow] < maxLocationWaitTimeInSeconds) {
             // we still have time to aquire better location
             return;
         }
-
+        
         if (_config.isDebugging) {
             [self notify:@"Aggressive monitoring engaged"];
         }
-
+        
         // We should have a good sample for speed now, power down our GPS as configured by user.
         isAcquiringSpeed = NO;
         locationManager.desiredAccuracy = _config.desiredAccuracy;
         locationManager.distanceFilter = [self calculateDistanceFilter:[bestLocation.speed floatValue]];
         [self startUpdatingLocation];
-
+        
     } else if (actAsInMode == FOREGROUND) {
         // Adjust distanceFilter incrementally based upon current speed
         float newDistanceFilter = [self calculateDistanceFilter:[bestLocation.speed floatValue]];
@@ -613,7 +616,7 @@ enum {
         }
         [self switchMode:operationMode];
     }
-
+    
     [self queue:bestLocation];
 }
 
@@ -625,7 +628,7 @@ enum {
 {
     CLLocationDistance radius = [region radius];
     CLLocationCoordinate2D coordinate = [region center];
-
+    
     DDLogDebug(@"LocationManager didExitRegion {%f,%f,%f}", coordinate.latitude, coordinate.longitude, radius);
     if (_config.isDebugging) {
         AudioServicesPlaySystemSound (exitRegionSound);
@@ -657,9 +660,9 @@ enum {
         AudioServicesPlaySystemSound (locationErrorSound);
         [self notify:[NSString stringWithFormat:@"Location error: %@", error.localizedDescription]];
     }
-
+    
     locationError = error;
-
+    
     switch(error.code) {
         case kCLErrorLocationUnknown:
         case kCLErrorNetwork:
@@ -673,7 +676,7 @@ enum {
         case kCLErrorDenied:
             break;
     }
-
+    
     if (self.delegate && [self.delegate respondsToSelector:@selector(onError:)]) {
         [self.delegate onError:error];
     }
@@ -685,7 +688,7 @@ enum {
     if (_config.isDebugging) {
         [self notify:[NSString stringWithFormat:@"Authorization status changed %u", status]];
     }
-
+    
     switch(status) {
         case kCLAuthorizationStatusRestricted:
         case kCLAuthorizationStatusDenied:
@@ -701,7 +704,7 @@ enum {
         default:
             break;
     }
-
+    
 }
 
 - (void) stopUpdatingLocation
@@ -736,12 +739,12 @@ enum {
 - (void) startMonitoringStationaryRegion:(Location*)location {
     CLLocationCoordinate2D coord = [location coordinate];
     DDLogDebug(@"LocationManager startMonitoringStationaryRegion {%f,%f,%ld}", coord.latitude, coord.longitude, (long)_config.stationaryRadius);
-
+    
     if (_config.isDebugging) {
         AudioServicesPlaySystemSound (acquiredLocationSound);
         [self notify:[NSString stringWithFormat:@"Monitoring region {%f,%f,%ld}", location.coordinate.latitude, location.coordinate.longitude, (long)_config.stationaryRadius]];
     }
-
+    
     [self stopMonitoringForRegion];
     stationaryRegion = [[CLCircularRegion alloc] initWithCenter: coord radius:_config.stationaryRadius identifier:@"LocationManager stationary region"];
     stationaryRegion.notifyOnExit = YES;
@@ -779,11 +782,11 @@ enum {
 {
     CLLocationCoordinate2D regionCenter = [stationaryRegion center];
     BOOL containsCoordinate = [stationaryRegion containsCoordinate:[location coordinate]];
-
+    
     DDLogVerbose(@"LocationManager location {%@,%@} region {%f,%f,%f} contains: %d",
-          location.latitude, location.longitude, regionCenter.latitude, regionCenter.longitude,
-          [stationaryRegion radius], containsCoordinate);
-
+                 location.latitude, location.longitude, regionCenter.latitude, regionCenter.longitude,
+                 [stationaryRegion radius], containsCoordinate);
+    
     return !containsCoordinate;
 }
 
