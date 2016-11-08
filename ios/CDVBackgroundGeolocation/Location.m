@@ -204,7 +204,7 @@ enum {
     return [NSString stringWithFormat:@"Location: id=%ld time=%ld lat=%@ lon=%@ accu=%@ aaccu=%@ speed=%@ bear=%@ alt=%@ type=%@", (long)id, (long)time, latitude, longitude, accuracy, altitudeAccuracy, speed, heading, altitude, type];
 }
 
-- (BOOL) postAsJSON:(NSString*)url withHttpHeaders:(NSMutableDictionary*)httpHeaders error:(NSError * __autoreleasing *)outError;
+- (NSUInteger) postAsJSON:(NSString*)url withHttpHeaders:(NSMutableDictionary*)httpHeaders error:(NSError * __autoreleasing *)outError;
 {
     NSArray *locations = [[NSArray alloc] initWithObjects:[self toDictionary], nil];
     //    NSArray *jsonArray = [NSJSONSerialization JSONObjectWithData: data options: NSJSONReadingMutableContainers error: &e];
@@ -229,11 +229,13 @@ enum {
     NSHTTPURLResponse* urlResponse = nil;
     [NSURLConnection sendSynchronousRequest:request returningResponse:&urlResponse error:outError];
     
-    if (*outError == nil && [urlResponse statusCode] == 200) {
-        return YES;
-    }
+    // if (*outError == nil && [urlResponse statusCode] == 200) {
+    //     return YES;
+    // }
     
-    return NO;
+    // return NO;
+
+    return [urlResponse statusCode];
 }
 
 -(id) copyWithZone: (NSZone *) zone

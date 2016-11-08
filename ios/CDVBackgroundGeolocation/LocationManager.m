@@ -424,11 +424,16 @@ enum {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
             if (hasConnectivity && [_config hasUrl]) {
                 NSError *error = nil;
-                if ([location postAsJSON:_config.url withHttpHeaders:_config.httpHeaders error:&error]) {
+                NSUInteger status = [location postAsJSON:_config.url withHttpHeaders:_config.httpHeaders error:&error];
+                if (status == 200) {
                     SQLiteLocationDAO* locationDAO = [SQLiteLocationDAO sharedInstance];
                     if (location.id != nil) {
                         [locationDAO deleteLocation:location.id];
                     }
+                } else if (status == 410) {
+                    // Stop BG tracking if we get a 410 response
+                    [self stop:nil];
+                    
                 } else {
                     DDLogWarn(@"LocationManager postJSON failed: error: %@", error.userInfo[@"NSLocalizedDescription"]);
                     hasConnectivity = [reach isReachable];

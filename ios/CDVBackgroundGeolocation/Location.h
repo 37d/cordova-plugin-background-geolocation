@@ -38,7 +38,7 @@
 - (double) distanceFromLocation:(Location*)location;
 - (BOOL) isBetterLocation:(Location*)location;
 - (BOOL) isBeyond:(Location*)location radius:(NSInteger)radius;
-- (BOOL) postAsJSON:(NSString*)url withHttpHeaders:(NSMutableDictionary*)httpHeaders error:(NSError * __autoreleasing *)outError;
+- (NSUInteger) postAsJSON:(NSString*)url withHttpHeaders:(NSMutableDictionary*)httpHeaders error:(NSError * __autoreleasing *)outError;
 - (id) copyWithZone: (NSZone *)zone;
 
 @end
