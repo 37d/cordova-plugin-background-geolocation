@@ -465,6 +465,13 @@ public class LocationService extends Service {
                 return false;
             }
 
+            // HTTP response code 410 (Gone) = resource is gone and we should stop tracking 
+            if (responseCode == HttpURLConnection.HTTP_GONE) {
+                log.debug("LocationService: Server responded with 410 (Gone) - calling stopRecording");
+                stopRecording();
+                return false;
+            }
+
             for (BackgroundLocation location : locations) {
                 Long locationId = location.getLocationId();
                 if (locationId != null) {
