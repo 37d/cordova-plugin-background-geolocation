@@ -460,15 +460,15 @@ public class LocationService extends Service {
                 return false;
             }
 
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                log.warn("Server error while posting locations responseCode: {}", responseCode);
-                return false;
-            }
-
             // HTTP response code 410 (Gone) = resource is gone and we should stop tracking 
             if (responseCode == HttpURLConnection.HTTP_GONE) {
                 log.debug("LocationService: Server responded with 410 (Gone) - calling stopRecording");
                 stopRecording();
+                return false;
+            }
+
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                log.warn("Server error while posting locations responseCode: {}", responseCode);
                 return false;
             }
 
